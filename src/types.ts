@@ -5,3 +5,5 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: 'message'; from: string; content: string }
   | { type: 'error'; message: string }
+
+export type Message = { from: string; content: string }

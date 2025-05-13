@@ -1,11 +1,12 @@
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { ClientMessage, ServerMessage } from "./types";
+import { ClientMessage, Message, ServerMessage } from "./types";
 
 const server = http.createServer();
 const wss = new WebSocketServer({ server });
 
 const users = new Map<string, WebSocket>();
+const history = new Map<string, Message[]>();
 
 wss.on('connection', (ws) => {
   let currentUserId: string | null = null;
@@ -22,36 +23,32 @@ wss.on('connection', (ws) => {
     }
 
     if (parsed.type === 'login') {
-      if (typeof parsed.userId !== 'string') {
-        ws.send(JSON.stringify({ type: 'error', message: 'Invalid login payload' }));
-        return;
-      }
-
       currentUserId = parsed.userId;
       users.set(currentUserId, ws);
       console.log(`user ${currentUserId} connected`);
+
+      const userHistory = history.get(currentUserId) || [];
+      userHistory.forEach((msg: Message) => {
+        ws.send(JSON.stringify({ type: 'message', from: msg.from, content: msg.content }));
+      });
+
       return;
     }
 
     if (parsed.type === 'message') {
-      if (
-        typeof parsed.from !== 'string' ||
-        typeof parsed.to !== 'string' ||
-        typeof parsed.content !== 'string'
-      ) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message payload' }));
-        return;
-      }
+      const { from, to, content } = parsed;
+      const recipientSocket = users.get(to);
 
-      const recipientSocket = users.get(parsed.to);
+      const msg = { from, content };
+      if (!history.has(to)) history.set(to, []);
+      history.get(to)!.push(msg);
+
       if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
-        const msg: ServerMessage = {
+        const serverMsg: ServerMessage = {
           type: 'message',
-          from: parsed.from,
-          content: parsed.content,
+          ...msg
         }
-
-        recipientSocket.send(JSON.stringify(msg));
+        recipientSocket.send(JSON.stringify(serverMsg));
       } else {
         const err: ServerMessage = { type: 'error', message: `User ${parsed.to} is not connected` };
         ws.send(JSON.stringify(err));
