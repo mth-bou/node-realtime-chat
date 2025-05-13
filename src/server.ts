@@ -1,49 +1,52 @@
 import http from 'node:http';
-import { WebSocketServer } from 'ws';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { WebSocketServer, WebSocket } from 'ws';
 
-// required for ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const server = http.createServer(async (req, res) => {
-  if (req.url === '/') {
-    try {
-      const html = await readFile(join(__dirname, '../public/index.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
-    } catch (error) {
-      res.writeHead(500, { 'Content-Type': 'text/html' });
-      res.end('<h1>500 Internal Server Error</h1>');
-    }
-  }
-});
-
+const server = http.createServer();
 const wss = new WebSocketServer({ server });
+
+const users = new Map<string, WebSocket>();
 
 wss.on('connection', (ws) => {
   console.log('new client connected');
 
-  ws.on('message', (data) => {
-    const message = data.toString();
-    console.log(`received: ${message}`);
+  let currentUserId: string | null = null;
 
-    wss.clients.forEach(client => {
-      if (client !== ws && client.readyState === ws.OPEN) {
-        client.send(message);
+  ws.on('message', (data) => {
+    try {
+      const parsed = JSON.parse(data.toString());
+
+      if (parsed.type === 'login') {
+        currentUserId = parsed.userId;
+        users.set(currentUserId!, ws);
+        console.log(`User ${currentUserId} logged in`);
+        return;
       }
-    });
+
+      if (parsed.type === 'message') {
+        const toSocket = users.get(parsed.to);
+        if (toSocket && toSocket?.readyState === WebSocket.OPEN) {
+          toSocket.send(JSON.stringify({
+            type: 'message',
+            from: parsed.from,
+            message: parsed.content,
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing message:', error);
+    }
   });
 
   ws.on('close', () => {
-    console.log('client disconnected');
+    if (currentUserId) {
+      users.delete(currentUserId);
+      console.log(`user ${currentUserId} disconnected`);
+    }
   });
 });
 
 const PORT = 3000;
 
 server.listen(PORT, () => {
-  console.log(`Server is listening on http://localhost:${PORT}`);
+  console.log(`Private chat server listening on http://localhost:${PORT}`);
 });
