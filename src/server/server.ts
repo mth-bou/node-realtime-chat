@@ -1,8 +1,20 @@
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { readFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ClientMessage, Message, ServerMessage } from "./types";
 
-const server = http.createServer();
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const clientPath = join(__dirname, '../../dist/client/index.html');
+
+const server = http.createServer(async (req, res) => {
+  if (req.url === '/') {
+    const html = await readFile(clientPath);
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(html);
+  }
+});
 const wss = new WebSocketServer({ server });
 
 const users = new Map<string, WebSocket>();
