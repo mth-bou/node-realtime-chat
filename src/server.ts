@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { ClientMessage, ServerMessage } from "./types";
 
 const server = http.createServer();
 const wss = new WebSocketServer({ server });
@@ -7,33 +8,54 @@ const wss = new WebSocketServer({ server });
 const users = new Map<string, WebSocket>();
 
 wss.on('connection', (ws) => {
-  console.log('new client connected');
-
   let currentUserId: string | null = null;
 
   ws.on('message', (data) => {
-    try {
-      const parsed = JSON.parse(data.toString());
+    let parsed: ClientMessage;
 
-      if (parsed.type === 'login') {
-        currentUserId = parsed.userId;
-        users.set(currentUserId!, ws);
-        console.log(`User ${currentUserId} logged in`);
+    try {
+      parsed = JSON.parse(data.toString());
+    } catch (e) {
+      const error: ServerMessage = { type: 'error', message: 'Invalid JSON format' };
+      ws.send(JSON.stringify(error));
+      return
+    }
+
+    if (parsed.type === 'login') {
+      if (typeof parsed.userId !== 'string') {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid login payload' }));
         return;
       }
 
-      if (parsed.type === 'message') {
-        const toSocket = users.get(parsed.to);
-        if (toSocket && toSocket?.readyState === WebSocket.OPEN) {
-          toSocket.send(JSON.stringify({
-            type: 'message',
-            from: parsed.from,
-            message: parsed.content,
-          }));
-        }
+      currentUserId = parsed.userId;
+      users.set(currentUserId, ws);
+      console.log(`user ${currentUserId} connected`);
+      return;
+    }
+
+    if (parsed.type === 'message') {
+      if (
+        typeof parsed.from !== 'string' ||
+        typeof parsed.to !== 'string' ||
+        typeof parsed.content !== 'string'
+      ) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message payload' }));
+        return;
       }
-    } catch (error) {
-      console.error('Error parsing message:', error);
+
+      const recipientSocket = users.get(parsed.to);
+      if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+        const msg: ServerMessage = {
+          type: 'message',
+          from: parsed.from,
+          content: parsed.content,
+        }
+
+        recipientSocket.send(JSON.stringify(msg));
+      } else {
+        const err: ServerMessage = { type: 'error', message: `User ${parsed.to} is not connected` };
+        ws.send(JSON.stringify(err));
+      }
     }
   });
 
