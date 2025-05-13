@@ -10,9 +10,19 @@ const clientPath = join(__dirname, '../../dist/client/index.html');
 
 const server = http.createServer(async (req, res) => {
   if (req.url === '/') {
-    const html = await readFile(clientPath);
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html);
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const html = await readFile(join(__dirname, '../../dist/client/index.html'));
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(html);
+      } catch {
+        res.writeHead(500);
+        res.end('Erreur interne');
+      }
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end();
+    }
   }
 });
 const wss = new WebSocketServer({ server });
